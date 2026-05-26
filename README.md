@@ -126,3 +126,138 @@ Manim 生成的视频通常会输出到 `media/videos/` 目录下。该目录是
 ```
 
 开发时建议先使用低清晰度确认动画效果，最终导出时再使用高清晰度。
+
+## Manim 简易入门
+
+### 1. 构建场景类
+
+Manim 的视频由“场景类”组成。每个场景类通常继承 `Scene` 或 `MovingCameraScene`，并在 `construct()` 方法中编写画面内容和动画流程。
+
+最简单的结构如下：
+
+```python
+from manim import *
+
+class MyScene(Scene):
+    def construct(self):
+        title = Text("Hello Manim")
+        self.play(Write(title))
+        self.wait(1)
+```
+
+本项目中，`Scene02NormalMatch`、`Scene03Mismatch`、`Scene10ImpedanceTransformer` 都是独立场景类，可以用类名单独渲染。
+
+### 2. 构建方块、线段和公式
+
+常用图形对象包括：
+
+```python
+box = RoundedRectangle(
+    width=1.8,
+    height=2.4,
+    fill_color="#1a2a3a",
+    fill_opacity=0.85,
+    stroke_color="#336699",
+    stroke_width=1.5,
+)
+
+line = Line(
+    start=[-3, 0.65, 0],
+    end=[3, 0.65, 0],
+    color="#5588bb",
+    stroke_width=5,
+)
+
+formula = MathTex(
+    r"Z_L = Z_0 = 50\,\Omega",
+    font_size=34,
+    color="#00e5cc",
+)
+```
+
+中文说明文字可使用 `Text()`：
+
+```python
+label = Text("电压最小点", font="sans-serif", font_size=18)
+```
+
+LaTeX 公式使用 `MathTex()` 或 `Tex()`，字符串前建议加 `r`，例如 `r"\lambda/4"`，避免反斜杠转义问题。
+
+### 3. 设置和调整元素位置
+
+Manim 坐标以画面中心为原点，`x` 向右，`y` 向上，`z` 通常写 `0`。
+
+直接放到指定坐标：
+
+```python
+formula.move_to([0, 2.5, 0])
+dot.move_to([2.45, 0, 0])
+```
+
+相对移动：
+
+```python
+label.shift(DOWN * 0.3)
+box.shift(RIGHT * 1.0)
+```
+
+放到另一个元素旁边：
+
+```python
+label.next_to(dot, UP, buff=0.35)
+formula.next_to(box, DOWN, buff=0.2)
+```
+
+常用方向包括 `UP`、`DOWN`、`LEFT`、`RIGHT`。`buff` 表示间距，数值越大距离越远。
+
+### 4. 播放动画
+
+创建元素后，可以用 `self.add()` 直接显示，或用 `self.play()` 播放动画。
+
+```python
+self.add(box)
+self.play(FadeIn(box))
+self.play(Write(formula))
+self.play(Create(line))
+self.wait(1.0)
+```
+
+如果要让线条或波形从左到右出现，可以用 `Create()`：
+
+```python
+self.play(Create(line), run_time=1.5)
+```
+
+如果是多个发光波形图层，可以用 `LaggedStart()`：
+
+```python
+self.play(
+    LaggedStart(
+        *[Create(layer) for layer in wave_group],
+        lag_ratio=0.08,
+    ),
+    run_time=1.5,
+)
+```
+
+### 5. 镜头移动
+
+需要镜头拉近或拉远时，场景类应继承 `MovingCameraScene`：
+
+```python
+class MyZoomScene(MovingCameraScene):
+    def construct(self):
+        self.play(
+            self.camera.frame.animate.set_width(6.2).move_to([3, 0, 0]),
+            run_time=1.4,
+        )
+```
+
+恢复到默认全景：
+
+```python
+self.play(
+    self.camera.frame.animate.set_width(config.frame_width).move_to(ORIGIN),
+    run_time=1.4,
+)
+```

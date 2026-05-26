@@ -2,7 +2,7 @@
 天线阻抗失配导致功放烧毁 — 工程科普动画
 使用 Manim CE v0.20.1, 1920x1080 @ 60fps
 
-视频共 9 个场景：
+视频共 10 个场景：
   场景1：标题
   场景2：正常匹配（前向波传播，天线吸收）
   场景3：复数负载失配（ZL=25+j25Ω，Γ=0.447∠116.57°）
@@ -12,6 +12,7 @@
   场景7：功放烧毁（电弧、白闪、波形崩塌）
   场景8：总结与保护方法
   场景9：基础布局（功放 + 传输线 + 天线）
+  场景10：λ/4 阻抗变换器匹配
 """
 
 from manim import *
@@ -83,7 +84,7 @@ MISMATCH_GAMMA_PHASE_RAD = np.deg2rad(MISMATCH_GAMMA_PHASE_DEG)
 #   外层：粗、很透明 → 模拟光晕扩散
 #   内层：细、不透明   → 波形主体
 
-def glow_wave_layers(x_min, x_max, wave_fn, color, glow_count=3):
+def glow_wave_layers(x_min, x_max, wave_fn, color, glow_count=3, reverse=False):
     """绘制带发光效果的波形。
     wave_fn(x) 接收位置 x，返回该点的电压值（y 坐标）。
     每帧通过 always_redraw 自动重绘，实现连续动画。"""
@@ -96,15 +97,18 @@ def glow_wave_layers(x_min, x_max, wave_fn, color, glow_count=3):
     layers = []
     for stroke_w, opacity in layers_def[:glow_count + 1]:
         def make_layer(sw=stroke_w, op=opacity):
-            return always_redraw(lambda:
-                FunctionGraph(
+            def build_graph():
+                graph = FunctionGraph(
                     lambda x: wave_fn(x),
                     x_range=[x_min, x_max],
                     color=color,
                     stroke_width=sw,
                     stroke_opacity=op,
                 )
-            )
+                if reverse:
+                    graph.reverse_points()
+                return graph
+            return always_redraw(build_graph)
         layers.append(make_layer())
     return VGroup(*layers)
 
@@ -458,16 +462,23 @@ class AntennaMismatch(MovingCameraScene):
         fwd_formula.move_to([0, TL_Y + 1.55, 0])
         self._fwd_formula = fwd_formula
         self.play(Write(fwd_formula), run_time=0.8)
+        self.wait(1.0)
 
         # ── 启动前向波（青绿色发光，沿传输线向右传播）──
         self._start_wave_time()
         tl_x_start, tl_x_end = connected_transmission_line_range()
         fwd_wave = glow_wave_layers(tl_x_start, tl_x_end, self._fwd_fn(),
                                     FORWARD_COLOR)
-        self.add(fwd_wave)
+        self.play(
+            LaggedStart(
+                *[Create(layer) for layer in fwd_wave],
+                lag_ratio=0.08,
+            ),
+            run_time=1.5,
+        )
 
         # 让波形连续运动约 5 秒
-        self.wait(5.5)
+        self.wait(1.0)
 
         # ── 天线辐射波纹（绿色同心圆扩散）──
         ripple_circles = VGroup()
@@ -517,8 +528,15 @@ class AntennaMismatch(MovingCameraScene):
             tl_x_start, tl_x_end,
             lambda x: wave_reflected_mismatch(x, self.time_tracker.get_value()),
             REFLECTED_COLOR,
+            reverse=True,
         )
-        self.play(FadeIn(ref), run_time=1.0)
+        self.play(
+            LaggedStart(
+                *[Create(layer) for layer in ref],
+                lag_ratio=0.08,
+            ),
+            run_time=1.5,
+        )
 
         if hasattr(self, "_fwd_formula"):
             self.play(FadeOut(self._fwd_formula), run_time=0.5)
@@ -971,7 +989,7 @@ class _BaseScene(MovingCameraScene):
         self.collapse_tracker = ValueTracker(1.0)
         self._time_updater_added = False
 
-    def _setup_ui(self, simple_transmission_line=False):
+    def _setup_ui(self, simple_transmission_line=False, animate=True):
         """构建画面中所有 UI 组件（功放、天线、传输线、面板、状态栏）。
         存入 self，相当于场景2中的布局初始化。"""
         self.pa_group, self.pa_body, self.pa_label = build_pa_module()
@@ -982,6 +1000,11 @@ class _BaseScene(MovingCameraScene):
             self.tl_group = build_transmission_line()
         self.panel_group, self.params = build_param_panel()
         self.status = build_status_line()
+
+        if not animate:
+            self.add(self.pa_group, self.ant_group, self.tl_group,
+                     self.panel_group)
+            return
 
         # 一次性淡入所有 UI
         self.play(
@@ -1103,23 +1126,26 @@ class Scene02NormalMatch(_BaseScene):
         self._start_wave_time()
         tl_x_start, tl_x_end = connected_transmission_line_range()
         fwd_wave = glow_wave_layers(tl_x_start, tl_x_end, self._fwd_fn(), FORWARD_COLOR)
-        self.add(fwd_wave)
-        self.wait(5.5)
+        self.play(
+            LaggedStart(
+                *[Create(layer) for layer in fwd_wave],
+                lag_ratio=0.08,
+            ),
+            run_time=1.5,
+        )
+        self.wait(0.5)
 
         # 天线辐射波纹
         ripple_circles = VGroup()
         for i in range(4):
             c = Circle(radius=0.25 + i * 0.35,
-                       stroke_color=ANTENNA_OK, stroke_width=3.5,
+                       stroke_color=ANTENNA_OK, stroke_width=4.5,
                        stroke_opacity=0.7 - i * 0.15, fill_opacity=0)
             c.move_to(self.ant_body.get_center())
             ripple_circles.add(c)
         self.play(LaggedStart(
             *[GrowFromCenter(c) for c in ripple_circles], lag_ratio=0.3,
         ), run_time=2.0)
-        self.play(FadeOut(ripple_circles), run_time=0.5)
-        self.wait(0.5)
-        self.remove(fwd_wave)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1129,7 +1155,7 @@ class Scene02NormalMatch(_BaseScene):
 class Scene03Mismatch(_BaseScene):
     def construct(self):
         self._setup_trackers(gamma=0.0)
-        self._setup_ui(simple_transmission_line=True)
+        self._setup_ui(simple_transmission_line=True, animate=False)
 
         tl_x_start, tl_x_end = connected_transmission_line_range()
         fwd_formula = MathTex(
@@ -1137,11 +1163,17 @@ class Scene03Mismatch(_BaseScene):
             font_size=34, color=FORWARD_COLOR,
         )
         fwd_formula.move_to([0, TL_Y + 1.55, 0])
-        self.play(Write(fwd_formula), run_time=0.8)
 
         self._start_wave_time()
         fwd = glow_wave_layers(tl_x_start, tl_x_end, self._fwd_fn(), FORWARD_COLOR)
-        self.add(fwd)
+        ripple_circles = VGroup()
+        for i in range(4):
+            c = Circle(radius=0.25 + i * 0.35,
+                       stroke_color=ANTENNA_OK, stroke_width=4.5,
+                       stroke_opacity=0.7 - i * 0.15, fill_opacity=0)
+            c.move_to(self.ant_body.get_center())
+            ripple_circles.add(c)
+        self.add(fwd_formula, fwd, ripple_circles)
         self.wait(1.0)
 
         self.play(FadeOut(self.ant_z), run_time=0.4)
@@ -1160,8 +1192,15 @@ class Scene03Mismatch(_BaseScene):
             tl_x_start, tl_x_end,
             lambda x: wave_reflected_mismatch(x, self.time_tracker.get_value()),
             REFLECTED_COLOR,
+            reverse=True,
         )
-        self.play(FadeIn(ref), run_time=1.0)
+        self.play(
+            LaggedStart(
+                *[Create(layer) for layer in ref],
+                lag_ratio=0.08,
+            ),
+            run_time=1.5,
+        )
         self.play(FadeOut(fwd_formula), run_time=0.5)
 
         total_formula = MathTex(
@@ -1623,3 +1662,196 @@ class Scene09SimpleLayout(Scene):
             run_time=1.0,
         )
         self.wait(4.0)
+
+
+# ═══════════════════════════════════════════════════════════════
+# 场景10：λ/4 阻抗变换器匹配
+# ═══════════════════════════════════════════════════════════════
+
+class Scene10ImpedanceTransformer(MovingCameraScene):
+    def _two_wire_segment(self, x_start, x_end, color, stroke_width=5.0,
+                          opacity=1.0):
+        gap = 0.65
+        top = Line([x_start, TL_Y + gap, 0], [x_end, TL_Y + gap, 0],
+                   color=color, stroke_width=stroke_width,
+                   stroke_opacity=opacity)
+        bot = Line([x_start, TL_Y - gap, 0], [x_end, TL_Y - gap, 0],
+                   color=color, stroke_width=stroke_width,
+                   stroke_opacity=opacity)
+        return VGroup(top, bot)
+
+    def _formula_at_top(self, tex, color=TEXT_PRIMARY, font_size=30,
+                        y_offset=0.35, x_offset=0):
+        formula = MathTex(tex, font_size=font_size, color=color)
+        frame = self.camera.frame
+        formula.move_to([
+            frame.get_center()[0] + x_offset,
+            frame.get_center()[1] + frame.height / 2 - y_offset,
+            0,
+        ])
+        max_width = frame.width * 0.9
+        if formula.width > max_width:
+            formula.scale(max_width / formula.width)
+        return formula
+
+    def construct(self):
+        time_tracker = ValueTracker(0)
+        time_tracker.add_updater(lambda m, dt: m.increment_value(dt))
+
+        pa_group, _, _ = build_pa_module()
+        ant_group, ant_body, _, ant_z = build_antenna()
+        new_ant_z = MathTex(r"25+j25\,\Omega",
+                            font_size=18, color=TEXT_SECONDARY)
+        new_ant_z.move_to(ant_z.get_center())
+        if new_ant_z.width > ANT_W * 1.1:
+            new_ant_z.scale((ANT_W * 1.1) / new_ant_z.width)
+        ant_group[1][1] = new_ant_z
+        x_start, x_end = connected_transmission_line_range()
+        full_line = build_simple_transmission_line(stroke_width=5.0)
+
+        self.play(
+            FadeIn(pa_group),
+            FadeIn(full_line),
+            FadeIn(ant_group),
+            run_time=1.0,
+        )
+        self.wait(0.5)
+
+        antenna_focus = [3.0, 0.0, 0]
+        self.play(
+            self.camera.frame.animate.set_width(6.2).move_to(antenna_focus),
+            run_time=1.4,
+        )
+
+        cut_x = 2.45
+        min_dot = Dot([cut_x, TL_Y, 0], radius=0.08, color=WARNING_COLOR)
+        min_line = DashedLine([cut_x, TL_Y - 0.9, 0], [cut_x, TL_Y + 0.9, 0],
+                              color=WARNING_COLOR, stroke_width=2.5)
+        min_label = Text("电压最小点", font="sans-serif", font_size=18,
+                         color=WARNING_COLOR)
+        min_label.next_to(min_dot, UP, buff=0.25)
+        min_label.shift(RIGHT*0.7)
+        self.play(Create(min_line), FadeIn(min_dot), FadeIn(min_label),
+                  run_time=0.8)
+
+        r_min_formula = self._formula_at_top(
+            r"R_{min} = \frac{Z_0}{\rho} = \frac{50}{2.618}"
+            r" \approx 19.1\,\Omega",
+            color=WARNING_COLOR,
+            font_size=30,
+            y_offset=0.5,
+            x_offset=-0.8
+        )
+        self.wait(0.5)
+        self.play(Write(r_min_formula), run_time=1.0)
+        self.wait(1.1)
+
+        left_stub = self._two_wire_segment(x_start, cut_x - 0.08, LINE_GLOW,
+                                           stroke_width=5.0, opacity=0.35)
+        antenna_side = self._two_wire_segment(cut_x, x_end, ANTENNA_OK,
+                                              stroke_width=5.0)
+        cut_mark_1 = Line([cut_x - 0.08, TL_Y + 0.85, 0],
+                          [cut_x + 0.08, TL_Y + 0.45, 0],
+                          color=WARNING_COLOR, stroke_width=4)
+        cut_mark_2 = Line([cut_x - 0.08, TL_Y - 0.45, 0],
+                          [cut_x + 0.08, TL_Y - 0.85, 0],
+                          color=WARNING_COLOR, stroke_width=4)
+        self.play(
+            FadeOut(full_line),
+            FadeIn(left_stub),
+            FadeIn(antenna_side),
+            Create(cut_mark_1),
+            Create(cut_mark_2),
+            run_time=0.9,
+        )
+
+        zt_formula = self._formula_at_top(
+            r"Z_T = \sqrt{R_{min}\cdot Z_0}"
+            r" = \sqrt{19.1 \times 50} = \sqrt{955}"
+            r" \approx 30.9\,\Omega",
+            color=TEXT_PRIMARY,
+            font_size=28,
+        )
+        self.play(FadeOut(r_min_formula), run_time=1.0)
+
+        transformer_len = 1.25
+        transformer_start = cut_x - transformer_len
+        transformer = self._two_wire_segment(transformer_start, cut_x,
+                                             WARNING_COLOR, stroke_width=7.0)
+        transformer_label = MathTex(r"\lambda/4,\ Z_T=30.9\Omega",
+                                    font_size=22, color=WARNING_COLOR)
+        transformer_label.next_to(transformer, DOWN, buff=0.18)
+        standard_left = self._two_wire_segment(x_start, transformer_start,
+                                               FORWARD_COLOR, stroke_width=5.0)
+
+        self.play(
+            FadeOut(left_stub),
+            FadeOut(cut_mark_1),
+            FadeOut(cut_mark_2),
+            FadeIn(transformer),
+            run_time=1.2,
+        )
+        self.wait(1.0)
+
+        self.play(Write(zt_formula), run_time=1.0)
+        self.wait(2.0)
+        self.play(FadeOut(zt_formula), run_time=0.5)
+        self.play(
+            self.camera.frame.animate.set_width(config.frame_width).move_to(ORIGIN),
+            run_time=1.4,
+        )
+        self.wait(0.5)
+        self.play(Write(transformer_label), FadeOut(min_label), FadeOut(min_dot), FadeOut(min_line), run_time=0.5)
+
+        zin_formula = self._formula_at_top(
+            r"Z_{in} = \frac{Z_T^2}{R_{min}}"
+            r" = \frac{30.9^2}{19.1} \approx 50\,\Omega",
+            color=FORWARD_COLOR,
+            font_size=30,
+            y_offset=0.8,
+        )
+        self.play(Write(zin_formula), run_time=1.0)
+        self.wait(1.0)
+
+        match_formula = self._formula_at_top(
+            r"Z_L = Z_0 = 50\,\Omega",
+            color=FORWARD_COLOR,
+            font_size=34,
+            y_offset=0.8,
+        )
+        self.play(
+            FadeOut(zin_formula),
+            run_time=1.0,
+        )
+        self.wait(1.0)
+        self.play(FadeIn(standard_left),run_time=1.0)
+        self.wait(1.0)
+        self.play(Write(match_formula), run_time=1.0)
+
+        fwd_wave = glow_wave_layers(
+            x_start, x_end,
+            lambda x: AMP * np.cos(OMEGA * time_tracker.get_value() - K * x),
+            FORWARD_COLOR,
+        )
+        self.wait(1.0)
+        self.play(
+            LaggedStart(
+                *[Create(layer) for layer in fwd_wave],
+                lag_ratio=0.08,
+            ),
+            FadeOut(transformer_label),
+            run_time=1.5,
+        )
+        self.wait(1.0)
+        # 天线辐射波纹
+        ripple_circles = VGroup()
+        for i in range(4):
+            c = Circle(radius=0.25 + i * 0.35,
+                       stroke_color=ANTENNA_OK, stroke_width=4.5,
+                       stroke_opacity=0.7 - i * 0.15, fill_opacity=0)
+            c.move_to(ant_body.get_center())
+            ripple_circles.add(c)
+        self.play(LaggedStart(
+            *[GrowFromCenter(c) for c in ripple_circles], lag_ratio=0.3,
+        ), run_time=2.0)
+        self.wait(1.5)
